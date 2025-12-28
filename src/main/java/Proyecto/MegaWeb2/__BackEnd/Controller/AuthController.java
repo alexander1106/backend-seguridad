@@ -6,25 +6,23 @@ import Proyecto.MegaWeb2.__BackEnd.Service.UsuarioService;
 import Proyecto.MegaWeb2.__BackEnd.Service.AuditService;
 import Proyecto.MegaWeb2.__BackEnd.Repository.UsuarioRepository;
 import Proyecto.MegaWeb2.__BackEnd.Dto.UsuarioDTO;
-import Proyecto.MegaWeb2.__BackEnd.Util.URLEncryptionUtil;
-import com.warrenstrange.googleauth.GoogleAuthenticator;
-import com.warrenstrange.googleauth.GoogleAuthenticatorKey;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-import org.springframework.web.context.request.RequestContextHolder;
-import org.springframework.web.context.request.ServletRequestAttributes;
-
-import jakarta.servlet.http.HttpServletRequest;
-import java.time.*;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.Map;
 import Proyecto.MegaWeb2.__BackEnd.Service.EmailService;
 import Proyecto.MegaWeb2.__BackEnd.Service.HashUtil;
 import Proyecto.MegaWeb2.__BackEnd.Service.TwoFactorService;
 
-@CrossOrigin(origins = "http://localhost:4200")
+import com.warrenstrange.googleauth.GoogleAuthenticator;
+import com.warrenstrange.googleauth.GoogleAuthenticatorKey;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import jakarta.servlet.http.HttpServletRequest;
+import java.time.Duration;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
+
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
@@ -45,7 +43,7 @@ public class AuthController {
     private EmailService emailService;
 
     @Autowired
-    private AuditService auditService;
+    private AuditService auditService;  // ⭐ NUEVO
 
     private Map<String, Object> createResponse(String status, String message, Object data) {
         Map<String, Object> map = new HashMap<>();
@@ -55,233 +53,311 @@ public class AuthController {
         return map;
     }
 
-    private String obtenerIPCliente() {
-        ServletRequestAttributes attrs = 
-            (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
-        if (attrs == null) return "UNKNOWN";
-        
-        HttpServletRequest request = attrs.getRequest();
+    /**
+     * Obtiene la IP del cliente considerando proxies
+     */
+    private String obtenerIPCliente(HttpServletRequest request) {
         String xForwardedFor = request.getHeader("X-Forwarded-For");
         if (xForwardedFor != null && !xForwardedFor.isEmpty()) {
             return xForwardedFor.split(",")[0].trim();
         }
+        
+        String xRealIp = request.getHeader("X-Real-IP");
+        if (xRealIp != null && !xRealIp.isEmpty()) {
+            return xRealIp;
+        }
+        
         return request.getRemoteAddr();
     }
 
+    // ================= LOGIN =================
     @PostMapping("/login")
-    public ResponseEntity<?> login(@RequestBody Map<String, String> body) {
-        String username = body.get("username");
+    public ResponseEntity<?> login(@RequestBody Map<String, String> body, HttpServletRequest request) {
+
+        String email = body.get("email");  
         String password = body.get("password");
-        String ipCliente = obtenerIPCliente();
+        String ipCliente = obtenerIPCliente(request);
 
-        if (username == null || password == null) {
-            // Registrar intento sospechoso
-            auditService.registrarLoginFallido("DESCONOCIDO", ipCliente, 
-                "Faltan credenciales");
-            return ResponseEntity.badRequest()
-                .body(createResponse("error", "Faltan datos de login", null));
-        }
-
-        UsuarioDTO user = usuarioService.authenticate(username, password);
-        
-        if (user == null) {
-            // ❌ LOGIN FALLIDO - Registrar en auditoría
-            auditService.registrarLoginFallido(username, ipCliente, 
-                "Credenciales inválidas");
+        if (email == null || email.isEmpty() || password == null || password.isEmpty()) {
+            // ⭐ AUDITAR: Intento de login sin credenciales
+            auditService.registrarLoginFallido("DESCONOCIDO", ipCliente, "Faltan credenciales");
             
-            return ResponseEntity.status(401)
-                .body(createResponse("error", "Credenciales inválidas", null));
+            return ResponseEntity.badRequest()
+                    .body(createResponse("error", "Faltan datos de login", null));
         }
 
-        // ✅ LOGIN EXITOSO - Registrar en auditoría
-        auditService.registrarLoginExitoso(username, ipCliente);
+        try {
+            // 🔹 Autenticación
+            UsuarioDTO user = usuarioService.authenticateByEmail(email, password);
 
-        ResponseLoginDto response = new ResponseLoginDto();
-        response.setUsername(username);
-        response.setRequire2FA(user.isTwoFactorEnabled());
+            if (user == null) {
+                // Diferenciamos si el email existe o solo la contraseña está mal
+                UsuarioDTO userExist = usuarioService.findByEmail(email);
+                
+                if (userExist == null) {
+                    // ⭐ AUDITAR: Email no existe
+                    auditService.registrarLoginFallido(email, ipCliente, "Email no registrado");
+                    
+                    return ResponseEntity.status(404)
+                            .body(createResponse("error", "Correo no registrado", null));
+                } else {
+                    // ⭐ AUDITAR: Contraseña incorrecta
+                    auditService.registrarLoginFallido(email, ipCliente, "Contraseña incorrecta");
+                    
+                    return ResponseEntity.status(401)
+                            .body(createResponse("error", "Contraseña incorrecta", null));
+                }
+            }
 
-        if (user.isTwoFactorEnabled()) {
+            // 🔹 Verificamos si el usuario está activo
+            if (user.getEstado() == 0) { // 0 = desactivado, 1 = activo
+                // ⭐ AUDITAR: Usuario desactivado
+                auditService.registrarLoginFallido(email, ipCliente, "Usuario desactivado");
+                
+                return ResponseEntity.status(403)
+                        .body(createResponse("error", "Usuario desactivado", null));
+            }
+
+            ResponseLoginDto response = new ResponseLoginDto();
+            response.setUsername(email);
+            response.setRequire2FA(user.isTwoFactorEnabled());
+
+            // 🔹 Si requiere 2FA
+            if (user.isTwoFactorEnabled()) {
+                // ⭐ AUDITAR: Se requiere 2FA (no es error, es normal)
+                auditService.registrarEvento(email, "LOGIN_2FA_REQUERIDO", 
+                    "Usuario requiere verificación 2FA", ipCliente, 
+                    "/api/auth/login", "POST");
+                
+                return ResponseEntity.ok(
+                        createResponse("success", "Se requiere verificación 2FA", response)
+                );
+            }
+
+            // 🔹 Generar token JWT de forma segura
+            Map<String, Object> tokenData = jwtUtil.generateToken(user);
+            if (tokenData == null || !tokenData.containsKey("token") || !tokenData.containsKey("expiration")) {
+                // ⭐ AUDITAR: Error generando token
+                auditService.registrarEvento(email, "LOGIN_ERROR_TOKEN", 
+                    "Error generando token JWT", ipCliente, 
+                    "/api/auth/login", "POST");
+                
+                return ResponseEntity.status(500)
+                        .body(createResponse("error", "Error generando token", null));
+            }
+
+            response.setToken((String) tokenData.get("token"));
+            Object expObj = tokenData.get("expiration");
+            long expiration = (expObj instanceof Long) ? (Long) expObj : ((Integer) expObj).longValue();
+            response.setExpiration(new Date(expiration));
+            response.setIsFirstAuthGoogle(0);
+
+            // ✅ AUDITAR: Login exitoso
+            auditService.registrarLoginExitoso(email, ipCliente);
+
             return ResponseEntity.ok(
-                createResponse("success", "Se requiere verificación 2FA", response));
+                    createResponse("success", "Login exitoso", response)
+            );
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            
+            // ⭐ AUDITAR: Error interno
+            auditService.registrarEvento(email != null ? email : "DESCONOCIDO", "LOGIN_ERROR", 
+                "Error interno: " + e.getMessage(), ipCliente, 
+                "/api/auth/login", "POST");
+            
+            return ResponseEntity.status(500)
+                    .body(createResponse("error", "Error interno del servidor: " + e.getMessage(), null));
         }
-
-        Map<String, Object> provisionalToken = jwtUtil.generateToken(user);
-        long expiration = (Long) provisionalToken.get("expiration");
-        Date dateTime = new Date(expiration);
-        String hashedUsername = HashUtil.hashUsername(username);
-        usuarioService.updateExpirationToken(hashedUsername, dateTime);
-
-        response.setExpiration(dateTime);
-        response.setToken((String) provisionalToken.get("token"));
-        response.setIsFirstAuthGoogle(0);
-        
-        return ResponseEntity.ok(createResponse("success", "Login exitoso", response));
     }
 
+    // ================= FORGOT PASSWORD =================
     @PostMapping("/forgot-password")
-    public ResponseEntity<?> recuperarPassword(@RequestBody Map<String, String> body) {
+    public ResponseEntity<?> recuperarPassword(@RequestBody Map<String, String> body, HttpServletRequest request) {
+
         String email = body.get("email");
-        String ipCliente = obtenerIPCliente();
+        String ipCliente = obtenerIPCliente(request);
 
         if (email == null || email.isEmpty()) {
+            // ⭐ AUDITAR: Email no proporcionado
             auditService.registrarEvento("ANONIMO", "FORGOT_PASSWORD_FALLIDO", 
-                "Email no proporcionado", ipCliente, "/api/auth/forgot-password", "POST");
+                "Email no proporcionado", ipCliente, 
+                "/api/auth/forgot-password", "POST");
             
             return ResponseEntity.badRequest()
-                .body(createResponse("error", "Falta el correo electrónico", null));
+                    .body(createResponse("error", "Falta el correo electrónico", null));
         }
 
         UsuarioDTO user = usuarioService.findByEmail(email);
         if (user == null) {
             // No revelar que el email no existe (seguridad)
+            // Pero sí registrarlo en auditoría
             auditService.registrarEvento("ANONIMO", "FORGOT_PASSWORD", 
-                "Email no encontrado: " + email, ipCliente, "/api/auth/forgot-password", "POST");
+                "Email no encontrado: " + email, ipCliente, 
+                "/api/auth/forgot-password", "POST");
             
+            // Responder como si fue exitoso (por seguridad)
             return ResponseEntity.ok(
-                createResponse("success", "Si el email existe, recibirás un enlace", null));
+                    createResponse("success", "Si el email existe, recibirás un enlace", null)
+            );
         }
 
         String token = jwtUtil.generateTemporaryToken(email, Duration.ofMinutes(15));
-        String resetLink = "https://megayuntas.amazoncode.dev/reset-password?token=" + token;
-        String asunto = "Recupera tu contraseña - MegaWeb";
-        String mensaje =
-                "Hola,\n\n" +
-                "Recibimos una solicitud para restablecer tu contraseña.\n" +
-                "Haz clic en el siguiente enlace para crear una nueva contraseña:\n\n" +
-                resetLink + "\n\n" +
-                "Si no solicitaste este cambio, ignora este correo.\n\n" +
-                "El enlace expirará en 15 minutos.";
+        String resetLink = "http://localhost:4200/reset-password?token=" + token;
 
-        emailService.enviarCorreo(email, asunto, mensaje);
-        
-        // ✅ Registrar intento exitoso
-        auditService.registrarEvento(user.getNombres(), "FORGOT_PASSWORD_EXITOSO", 
-            "Email de recuperación enviado a: " + email, ipCliente, 
-            "/api/auth/forgot-password", "POST");
-        
+        String asunto = "🔐 Recupera tu contraseña - MegaWeb";
+
+        String mensajeHtml =
+"<!DOCTYPE html>" +
+"<html lang='es'>" +
+"<head>" +
+"<meta charset='UTF-8'>" +
+"<meta name='viewport' content='width=device-width, initial-scale=1.0'>" +
+"<title>Recuperación de contraseña</title>" +
+"</head>" +
+
+"<body style='margin:0;padding:0;background-color:#f4f6f8;font-family:Arial,Helvetica,sans-serif;'>" +
+
+"<table width='100%' cellpadding='0' cellspacing='0' style='padding:30px 10px;'>" +
+"<tr><td align='center'>" +
+
+"<table width='600' cellpadding='0' cellspacing='0' style='background:#ffffff;border-radius:14px;" +
+"box-shadow:0 8px 24px rgba(0,0,0,0.08);overflow:hidden;'>" +
+
+/* ===== HEADER ===== */
+"<tr>" +
+"<td style='background:#1e88e5;padding:25px;text-align:center;'>" +
+"<h1 style='color:#ffffff;margin:0;font-size:24px;letter-spacing:0.5px;'>MegaWeb</h1>" +
+"<p style='color:#e3f2fd;margin:6px 0 0;font-size:14px;'>Seguridad de tu cuenta</p>" +
+"</td>" +
+"</tr>" +
+
+/* ===== BODY ===== */
+"<tr>" +
+"<td style='padding:35px 40px;color:#444;font-size:15px;line-height:1.7;'>" +
+
+"<h2 style='margin-top:0;color:#2c3e50;font-size:20px;'>🔐 Recuperación de contraseña</h2>" +
+
+"<p>Hola,</p>" +
+"<p>Hemos recibido una solicitud para restablecer la contraseña de tu cuenta en <b>MegaWeb</b>.</p>" +
+"<p>Para continuar, haz clic en el botón de abajo:</p>" +
+
+"<div style='text-align:center;margin:35px 0;'>" +
+"<a href='" + resetLink + "' " +
+"style='background:#1e88e5;color:#ffffff;text-decoration:none;" +
+"padding:14px 36px;border-radius:8px;font-weight:bold;" +
+"font-size:15px;display:inline-block;" +
+"box-shadow:0 6px 16px rgba(30,136,229,0.4);'>" +
+"Restablecer contraseña</a>" +
+"</div>" +
+
+"<p style='font-size:14px;color:#555;'>Si no solicitaste este cambio, puedes ignorar este correo de forma segura.</p>" +
+
+"<div style='background:#f5f7fa;padding:12px 16px;border-radius:8px;margin-top:20px;'>" +
+"<p style='margin:0;font-size:13px;color:#666;'>⏰ <b>Importante:</b> Este enlace expirará en 15 minutos.</p>" +
+"</div>" +
+
+"</td>" +
+"</tr>" +
+
+/* ===== FOOTER ===== */
+"<tr>" +
+"<td style='background:#fafafa;padding:20px;text-align:center;border-top:1px solid #eee;'>" +
+"<p style='margin:0;font-size:12px;color:#999;'>" +
+"© 2025 MegaWeb · Todos los derechos reservados" +
+"</p>" +
+"<p style='margin:6px 0 0;font-size:12px;color:#bbb;'>" +
+"Este es un correo automático, por favor no respondas" +
+"</p>" +
+"</td>" +
+"</tr>" +
+
+"</table>" +
+"</td></tr>" +
+"</table>" +
+
+"</body></html>";
+
+        try {
+            emailService.enviarCorreo(email, asunto, mensajeHtml);
+            
+            // ✅ AUDITAR: Email de recuperación enviado
+            auditService.registrarEvento(user.getNombres(), "FORGOT_PASSWORD_EXITOSO", 
+                "Email de recuperación enviado a: " + email, ipCliente, 
+                "/api/auth/forgot-password", "POST");
+        } catch (Exception e) {
+            // ⭐ AUDITAR: Error enviando email
+            auditService.registrarEvento(user.getNombres(), "FORGOT_PASSWORD_EMAIL_ERROR", 
+                "Error enviando email: " + e.getMessage(), ipCliente, 
+                "/api/auth/forgot-password", "POST");
+            
+            return ResponseEntity.status(500)
+                    .body(createResponse("error", "Error enviando correo", null));
+        }
+
         return ResponseEntity.ok(
-            createResponse("success", "Correo de recuperación enviado", null));
+                createResponse("success", "Correo de recuperación enviado", null)
+        );
     }
 
+    // ================= RESET PASSWORD =================
     @PostMapping("/restablecer-password")
-    public ResponseEntity<?> restablecerPassword(@RequestBody Map<String, String> body) {
+    public ResponseEntity<?> restablecerPassword(@RequestBody Map<String, String> body, HttpServletRequest request) {
+
         String token = body.get("token");
         String nuevaPassword = body.get("password");
-        String ipCliente = obtenerIPCliente();
+        String ipCliente = obtenerIPCliente(request);
 
         if (token == null || nuevaPassword == null) {
+            // ⭐ AUDITAR: Datos incompletos
             auditService.registrarEvento("ANONIMO", "RESET_PASSWORD_FALLIDO", 
-                "Datos incompletos", ipCliente, "/api/auth/restablecer-password", "POST");
+                "Datos incompletos", ipCliente, 
+                "/api/auth/restablecer-password", "POST");
             
             return ResponseEntity.badRequest()
-                .body(createResponse("error", "Datos incompletos", null));
+                    .body(createResponse("error", "Datos incompletos", null));
         }
 
         String email = jwtUtil.validarYObtenerEmail(token);
         if (email == null) {
+            // ⭐ AUDITAR: Token inválido
             auditService.registrarEvento("ANONIMO", "RESET_PASSWORD_FALLIDO", 
-                "Token inválido o expirado", ipCliente, "/api/auth/restablecer-password", "POST");
+                "Token inválido o expirado", ipCliente, 
+                "/api/auth/restablecer-password", "POST");
             
             return ResponseEntity.status(400)
-                .body(createResponse("error", "Token inválido o expirado", null));
+                    .body(createResponse("error", "Token inválido o expirado", null));
         }
 
         UsuarioDTO user = usuarioService.findByEmail(email);
         if (user == null) {
-            return ResponseEntity.status(404)
-                .body(createResponse("error", "Usuario no encontrado", null));
-        }
-
-        usuarioService.updatePassword(email, nuevaPassword);
-        
-        // ✅ Registrar cambio de contraseña exitoso
-        auditService.registrarCambioPassword(user.getNombres(), ipCliente);
-        
-        return ResponseEntity.ok(
-            createResponse("success", "Contraseña actualizada correctamente", null));
-    }
-
-    @PostMapping("/verify-2fa")
-    public ResponseEntity<?> verifyTwoFactor(@RequestBody Map<String, String> body) {
-        String username = body.get("username");
-        int code = Integer.parseInt(body.get("code"));
-        String ipCliente = obtenerIPCliente();
-
-        String hashedUsername = HashUtil.hashUsername(username);
-        UsuarioDTO user = usuarioService.findByUsername(hashedUsername);
-
-        if (user == null) {
-            auditService.registrarLoginFallido(username, ipCliente, "Usuario no encontrado");
-            return ResponseEntity.status(404).body("Usuario no encontrado");
-        }
-
-        boolean valid = twoFactorService.verifyCode(user.getSecret2FA(), code);
-        if (!valid) {
-            auditService.registrarLoginFallido(username, ipCliente, "Código 2FA inválido");
-            return ResponseEntity.status(401).body("Código inválido");
-        }
-
-        usuarioRepository.updateTwoFactorEnabled(hashedUsername, true);
-        
-        // ✅ Registrar 2FA exitoso
-        auditService.registrarEvento(username, "2FA_EXITOSO", 
-            "Verificación 2FA completada", ipCliente, "/api/auth/verify-2fa", "POST");
-        
-        Map<String, Object> tokenData = jwtUtil.generateToken(user);
-        return ResponseEntity.ok(tokenData);
-    }
-
-    @GetMapping("/generate-qr/{username}")
-    public ResponseEntity<Map<String, Object>> generateQR(@PathVariable String username) {
-        GoogleAuthenticator gAuth = new GoogleAuthenticator();
-        GoogleAuthenticatorKey key = gAuth.createCredentials();
-
-        String issuer = "MegaWeb";
-        String secret = key.getKey();
-
-        String hashedUsername = HashUtil.hashUsername(username);
-        usuarioService.updateSecret2FA(hashedUsername, secret);
-
-        String otpAuthUrl = String.format(
-                "otpauth://totp/%s:%s?secret=%s&issuer=%s",
-                issuer, username, secret, issuer
-        );
-
-        Map<String, Object> response = new HashMap<>();
-        response.put("secret", secret);
-        response.put("otpAuthUrl", otpAuthUrl);
-        return ResponseEntity.ok(response);
-    }
-
-    @PostMapping("/enable-2fa")
-    public ResponseEntity<?> enableTwoFactor(@RequestBody Map<String, String> body) {
-        String username = body.get("username");
-        String ipCliente = obtenerIPCliente();
-        String hashedUsername = HashUtil.hashUsername(username);
-
-        UsuarioDTO user = usuarioService.findByUsername(hashedUsername);
-        if (user == null) {
-            auditService.registrarEvento("ANONIMO", "ENABLE_2FA_FALLIDO", 
-                "Usuario no encontrado: " + username, ipCliente, 
-                "/api/auth/enable-2fa", "POST");
+            // ⭐ AUDITAR: Usuario no encontrado
+            auditService.registrarEvento("ANONIMO", "RESET_PASSWORD_FALLIDO", 
+                "Usuario no encontrado: " + email, ipCliente, 
+                "/api/auth/restablecer-password", "POST");
             
             return ResponseEntity.status(404)
-                .body(createResponse("error", "Usuario no encontrado", null));
+                    .body(createResponse("error", "Usuario no encontrado", null));
         }
 
-        String secret = twoFactorService.generateSecret();
-        String otpAuthUrl = twoFactorService.getOtpAuthURL(username, secret);
-
-        usuarioService.updateSecret2FA(hashedUsername, secret);
-        usuarioRepository.updateTwoFactorEnabled(hashedUsername, true);
-
-        // ✅ Registrar habilitación de 2FA
-        auditService.registrarEvento(username, "ENABLE_2FA", 
-            "2FA habilitado", ipCliente, "/api/auth/enable-2fa", "POST");
-
-        Map<String, String> data = new HashMap<>();
-        data.put("secret", secret);
-        data.put("otpAuthUrl", otpAuthUrl);
-        return ResponseEntity.ok(createResponse("success", "2FA habilitado", data));
+        try {
+            usuarioService.updatePassword(email, nuevaPassword);
+            
+            // ✅ AUDITAR: Cambio de contraseña exitoso
+            auditService.registrarCambioPassword(user.getNombres(), ipCliente);
+            
+            return ResponseEntity.ok(
+                    createResponse("success", "Contraseña actualizada correctamente", null)
+            );
+        } catch (Exception e) {
+            // ⭐ AUDITAR: Error al cambiar contraseña
+            auditService.registrarEvento(user.getNombres(), "RESET_PASSWORD_ERROR", 
+                "Error: " + e.getMessage(), ipCliente, 
+                "/api/auth/restablecer-password", "POST");
+            
+            return ResponseEntity.status(500)
+                    .body(createResponse("error", "Error al actualizar contraseña", null));
+        }
     }
 }
