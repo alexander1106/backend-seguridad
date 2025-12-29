@@ -25,10 +25,7 @@ public class UsuarioController {
 		this.usuarioService = usuarioService;
 	}
 
-	/**
-	 * Crea un nuevo usuario a partir del JSON recibido en el cuerpo y
-	 * devuelve un mapa con el id generado.
-	 */
+
 @PostMapping
 public ResponseEntity<Map<String, Integer>> crearUsuario(
         @Valid @RequestBody UsuarioCreateRequestDTO dto

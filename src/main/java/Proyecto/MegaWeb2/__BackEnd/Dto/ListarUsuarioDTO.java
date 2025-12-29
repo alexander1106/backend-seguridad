@@ -8,6 +8,7 @@ public class ListarUsuarioDTO {
 	private String email;
 	private int suscripcion;
 	private String tema;
+	private String dni;
 	private String jtable;
 	private String imagen;
 	private int idRol;
@@ -116,6 +117,14 @@ public class ListarUsuarioDTO {
 				+ username + ", email=" + email + ", suscripcion=" + suscripcion + ", tema=" + tema + ", jtable="
 				+ jtable + ", imagen=" + imagen + ", idRol=" + idRol + ", createdAt=" + createdAt + ", updatedAt="
 				+ updatedAt + "]";
+	}
+
+	public String getDni() {
+		return dni;
+	}
+
+	public void setDni(String dni) {
+		this.dni = dni;
 	}
 
 }

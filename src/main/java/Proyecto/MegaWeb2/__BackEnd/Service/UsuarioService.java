@@ -1,20 +1,31 @@
 package Proyecto.MegaWeb2.__BackEnd.Service;
 
+import java.awt.Image;
+
 import Proyecto.MegaWeb2.__BackEnd.Model.User;
 import Proyecto.MegaWeb2.__BackEnd.Dto.UsuarioCreateRequestDTO;
 import Proyecto.MegaWeb2.__BackEnd.Dto.EditarUsuarioDTO;
 import Proyecto.MegaWeb2.__BackEnd.Dto.ListarUsuarioDTO;
 import Proyecto.MegaWeb2.__BackEnd.Dto.UsuarioDTO;
 import Proyecto.MegaWeb2.__BackEnd.Repository.UsuarioRepository;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import com.spire.pdf.PdfDocument;
+
+import java.io.ByteArrayInputStream;
+import java.io.FileInputStream;
+import java.io.InputStream;
+import java.util.Base64;
 import java.util.Date;
 import java.util.List;
 
+import com.spire.pdf.PdfDocument;
+import com.spire.pdf.graphics.PdfImage;
 @Service
 public class UsuarioService {
 
@@ -27,45 +38,73 @@ public class UsuarioService {
     private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
     // ================= LOGIN POR EMAIL =================
-    public UsuarioDTO authenticateByEmail(String email, String password) {
-        User user = jdbcTemplate.query("CALL sp_login(?)", new Object[]{email}, rs -> {
-            if (rs.next()) {
-                User u = new User();
-                u.setId(rs.getInt("id"));
-                u.setNombres(rs.getString("nombres"));
-                u.setApellidos(rs.getString("apellidos"));
-                u.setPassword(rs.getString("password"));
-                u.setEmail(rs.getString("email"));
-                u.setIdRol(rs.getInt("idRol"));
-                return u;
-            }
-            return null;
-        });
-
-        if (user == null) return null;
-
-        // Verificar contraseña
-        if (!passwordEncoder.matches(password, user.getPassword())) {
-            return null;
+public UsuarioDTO authenticateByEmail(String email, String password) {
+    User user = jdbcTemplate.query("CALL sp_login(?)", new Object[]{email}, rs -> {
+        if (rs.next()) {
+            User u = new User();
+            u.setId(rs.getInt("id"));
+            u.setNombres(rs.getString("nombres"));
+            u.setApellidos(rs.getString("apellidos"));
+            u.setPassword(rs.getString("password"));
+            u.setEmail(rs.getString("email"));
+            u.setIdRol(rs.getInt("idRol"));
+            u.setEstado(rs.getInt("estado")); // 🔹 AGREGAR ESTO
+            return u;
         }
+        return null;
+    });
 
-        // Mapear a DTO
-        UsuarioDTO dto = new UsuarioDTO();
-        dto.setId(user.getId());
-        dto.setNombres(user.getNombres());
-        dto.setApellidos(user.getApellidos());
-        dto.setEmail(user.getEmail());
-        dto.setRol(user.getIdRol());
-        dto.setTwoFactorEnabled(false); // Ajustar según lógica 2FA
-        return dto;
+    if (user == null) return null;
+
+    if (!passwordEncoder.matches(password, user.getPassword())) {
+        return null;
     }
 
-    // ================= CREAR USUARIO =================
-    public int crearUsuario(UsuarioCreateRequestDTO dto) {
-        // Hashear password
-        dto.setPassword(passwordEncoder.encode(dto.getPassword()));
-        return usuarioRepository.crearUsuario(dto);
+    UsuarioDTO dto = new UsuarioDTO();
+    dto.setId(user.getId());
+    dto.setNombres(user.getNombres());
+    dto.setApellidos(user.getApellidos());
+    dto.setEmail(user.getEmail());
+    dto.setRol(user.getIdRol());
+    dto.setEstado(user.getEstado()); // 🔹 AGREGAR ESTO
+    dto.setTwoFactorEnabled(false);
+
+    return dto;
+}
+
+
+
+    
+public int crearUsuario(UsuarioCreateRequestDTO dto) {
+    // 1️⃣ Hashear la contraseña
+    dto.setPassword(passwordEncoder.encode(dto.getPassword()));
+
+    // 2️⃣ Guardar usuario en BD usando tu repositorio
+    int idUsuario = usuarioRepository.crearUsuario(dto);
+
+    try {
+        // ==================== Cargar PDF ====================
+        PdfDocument pdf = new PdfDocument();
+        pdf.loadFromFile("plantilla_terminos.pdf");
+
+        // ==================== Agregar firma visible ====================
+        byte[] decodedImg = Base64.getDecoder().decode(dto.getFirmaBase64().split(",")[1]);
+        ByteArrayInputStream bais = new ByteArrayInputStream(decodedImg);
+        PdfImage pdfImg = PdfImage.fromStream(bais);
+
+        pdf.getPages().get(0).getCanvas().drawImage(pdfImg, 50, 100, 200, 100);
+
+        // ==================== Guardar PDF final ====================
+        String outputPdf = "usuario_" + idUsuario + "_firmado.pdf";
+        pdf.saveToFile(outputPdf);
+        pdf.close();
+
+    } catch (Exception e) {
+        e.printStackTrace();
     }
+
+    return idUsuario;
+}
 
     // ================= LISTAR USUARIOS =================
     public List<ListarUsuarioDTO> listarUsuarios(Integer id) {

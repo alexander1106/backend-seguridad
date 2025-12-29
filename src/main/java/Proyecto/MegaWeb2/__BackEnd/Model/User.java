@@ -26,6 +26,7 @@ public class User {
     private boolean twoFactorEnabled = false;
 	@Column(name = "secret_2fa")
     private String secret2FA;
+	private int estado; // 0 = desactivado, 1 = activo
 
 	  // Getters y setters
     public boolean isTwoFactorEnabled() {
@@ -113,5 +114,13 @@ public class User {
 	public String toString() {
 		return "User [id=" + id + ", nombres=" + nombres + ", apellidos=" + apellidos + ", password=" + password + ", email=" + email + ", idRol=" + idRol + ", imagen=" + imagen + "]";
 	}
+
+    public int getEstado() {
+        return estado;
+    }
+
+    public void setEstado(int estado) {
+        this.estado = estado;
+    }
 
 }

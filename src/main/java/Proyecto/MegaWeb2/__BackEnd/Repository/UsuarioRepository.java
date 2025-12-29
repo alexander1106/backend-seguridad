@@ -30,24 +30,21 @@ public class UsuarioRepository {
 	private JdbcTemplate jdbcTemplate;
 
 public int crearUsuario(UsuarioCreateRequestDTO dto) {
-String sql = "CALL sp_crear_usuario(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-Object[] params = new Object[]{
-    dto.getNombres(),
-    dto.getApellidos(),
-    dto.getEmail(),         // username = email (o usa dto.getUsername() si lo tienes)
-    dto.getPassword(),
-    dto.getEmail(),
-    dto.getSuscripcion(),
-    "defaultTema",
-    "defaultJtable",
-    "defaultImagen",
-    dto.getIdRol()
-};
+    // Solo 6 parámetros según el procedimiento almacenado
+    String sql = "CALL sp_crear_usuario(?, ?, ?, ?, ?, ?,?)";
+    Object[] params = new Object[]{
+        dto.getNombres(),    // p_nombres
+        dto.getApellidos(),  // p_apellidos
+        dto.getPassword(),   // p_password
+        dto.getEmail(),      // p_email
+        dto.getDni(),        // p_dni
+        dto.getIdRol(),      // p_idRol
+        dto.getFirmaBase64() // p_firmaBase64
+    };
 
-
-    return jdbcTemplate.query(sql, params, rs -> rs.next() ? rs.getInt("idUsuario") : 0);
+    // Usamos update si no devuelve id, o query si tu procedimiento devuelve algo
+    return jdbcTemplate.update(sql, params);
 }
-
 
 	public List<ListarUsuarioDTO> listarUsuarios(Integer id) {
 		return jdbcTemplate.query(
@@ -58,8 +55,8 @@ Object[] params = new Object[]{
 					u.setId(rs.getInt("id"));
 					u.setNombres(rs.getString("nombres"));
 					u.setApellidos(rs.getString("apellidos"));
-					u.setUsername(rs.getString("username"));
 					u.setEmail(rs.getString("email"));
+                    u.setDni(rs.getString("dni"));
 					u.setSuscripcion(rs.getInt("suscripcion"));
 					u.setTema(rs.getString("tema"));
 					u.setJtable(rs.getString("jtable"));
@@ -81,10 +78,11 @@ Object[] params = new Object[]{
 					u.setId(rs.getInt("id"));
 					u.setNombres(rs.getString("nombres"));
 					u.setApellidos(rs.getString("apellidos"));
-					u.setUsername(rs.getString("username"));
 					u.setEmail(rs.getString("email"));
 					u.setSuscripcion(rs.getInt("suscripcion"));
 					u.setTema(rs.getString("tema"));
+                    u.setDni(rs.getString("dni"));
+
 					u.setJtable(rs.getString("jtable"));
 					u.setImagen(rs.getString("imagen"));
 					u.setIdRol(rs.getInt("idRol"));
