@@ -24,7 +24,12 @@ public class UsuarioCreateRequestDTO {
     @Size(min = 8, max = 8, message = "El DNI debe tener 8 dígitos")
     private String dni;
 
-    private Integer suscripcion;
+
+	@NotBlank(message = "La firma es obligatoria")
+private String firmaBase64;
+public String getFirmaBase64() { return firmaBase64; }
+public void setFirmaBase64(String firmaBase64) { this.firmaBase64 = firmaBase64; }
+
     private int idRol;
 
     // Getters y setters (incluyendo DNI)
@@ -55,12 +60,7 @@ public class UsuarioCreateRequestDTO {
 	public void setEmail(String email) {
 		this.email = email;
 	}
-	public Integer getSuscripcion() {
-		return suscripcion;
-	}
-	public void setSuscripcion(Integer suscripcion) {
-		this.suscripcion = suscripcion;
-	}
+
 	public int getIdRol() {
 		return idRol;
 	}

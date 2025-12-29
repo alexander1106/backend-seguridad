@@ -22,7 +22,6 @@ public class UsuarioDTO {
     private String dni;
     
 
-    
     // 🔹 Agregamos el campo estado
     private int estado; // 0 = desactivado, 1 = activo
 
