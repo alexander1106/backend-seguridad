@@ -1,6 +1,6 @@
 package Proyecto.MegaWeb2.__BackEnd.Repository;
 
-import Proyecto.MegaWeb2.__BackEnd.Dto.AñadirComentarioDTO;
+import Proyecto.MegaWeb2.__BackEnd.Dto.AnadirComentarioDTO;
 import Proyecto.MegaWeb2.__BackEnd.Dto.ComentarioResponseDTO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -34,8 +34,8 @@ public class ComentarioRepository {
         });
     }
 
-    // Añadir comentario
-    public int registrarComentario(AñadirComentarioDTO dto, int idUsuario) {
+    // Anadir comentario
+    public int registrarComentario(AnadirComentarioDTO dto, int idUsuario) {
         try {
             jdbcTemplate.update("CALL sp_insertar_comentario(?, ?, ?)",
                 dto.getComentario(), idUsuario, dto.getIdConsulta());
@@ -50,3 +50,4 @@ public class ComentarioRepository {
     }
 
 }
+
