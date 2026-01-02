@@ -1,6 +1,6 @@
 package Proyecto.MegaWeb2.__BackEnd.Dto;
 
-public class AñadirComentarioDTO {
+public class AnadirComentarioDTO {
 
 	private String comentario;
 	private int idConsulta;
@@ -23,7 +23,8 @@ public class AñadirComentarioDTO {
 
 	@Override
 	public String toString() {
-		return "AñadirComentarioDTO [comentario=" + comentario + ", idConsulta=" + idConsulta + "]";
+		return "AnadirComentarioDTO [comentario=" + comentario + ", idConsulta=" + idConsulta + "]";
 	}
 
 }
+
