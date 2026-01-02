@@ -35,7 +35,7 @@ public class SecurityConfig {
         cfg.setAllowedOrigins(List.of(
                 "http://localhost:4200",
                 "http://localhost:8080",
-                "https://megayuntas.amazoncode.dev"
+                "https://megayuntas.netlify.app"
         ));
         cfg.setAllowedMethods(List.of("GET","POST","PUT","DELETE","OPTIONS"));
         cfg.setAllowedHeaders(List.of("*"));
@@ -93,3 +93,4 @@ public class SecurityConfig {
         return http.build();
     }
 }
+
