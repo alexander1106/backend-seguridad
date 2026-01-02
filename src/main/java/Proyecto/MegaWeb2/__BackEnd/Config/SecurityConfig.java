@@ -29,9 +29,9 @@ public class SecurityConfig {
         return new BCryptPasswordEncoder();
     }
 
+   
     @Bean
-    @Bean
-public CorsConfigurationSource corsConfigurationSource() {
+    public CorsConfigurationSource corsConfigurationSource() {
     CorsConfiguration cfg = new CorsConfiguration();
 
     cfg.setAllowedOriginPatterns(List.of("*")); 
@@ -43,7 +43,7 @@ public CorsConfigurationSource corsConfigurationSource() {
     UrlBasedCorsConfigurationSource src = new UrlBasedCorsConfigurationSource();
     src.registerCorsConfiguration("/**", cfg);
     return src;
-}
+    }
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -92,5 +92,6 @@ public CorsConfigurationSource corsConfigurationSource() {
         return http.build();
     }
 }
+
 
 
