@@ -29,25 +29,53 @@ public class UsuarioRepository {
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
 
+    // 🔹 BUSCAR USUARIO POR SECRET 2FA
+    public UsuarioDTO findBySecret2FA(String secret2FA) {
+        String sql = """
+            SELECT id, nombres, apellidos, email, idRol, estado
+            FROM users
+            WHERE secret_2fa = ?
+        """;
+
+        return jdbcTemplate.query(sql, new Object[]{secret2FA}, rs -> {
+            if (rs.next()) {
+                UsuarioDTO dto = new UsuarioDTO();
+                dto.setId(rs.getInt("id"));
+                dto.setNombres(rs.getString("nombres"));
+                dto.setApellidos(rs.getString("apellidos"));
+                dto.setEmail(rs.getString("email"));
+                dto.setRol(rs.getInt("idRol"));
+                dto.setEstado(rs.getInt("estado"));
+                return dto;
+            }
+            return null;
+        });
+    }
+
+    // 🔹 LIMPIAR SECRET 2FA (recomendado)
+    public void updateSecret2FA(String email, String secret2FA) {
+        jdbcTemplate.update(
+            "UPDATE users SET secret_2fa = ? WHERE email = ?",
+            secret2FA, email
+        );
+    }
+
 public int crearUsuario(UsuarioCreateRequestDTO dto) {
-String sql = "CALL sp_crear_usuario(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-Object[] params = new Object[]{
-    dto.getNombres(),
-    dto.getApellidos(),
-    dto.getEmail(),         // username = email (o usa dto.getUsername() si lo tienes)
-    dto.getPassword(),
-    dto.getEmail(),
-    dto.getSuscripcion(),
-    "defaultTema",
-    "defaultJtable",
-    "defaultImagen",
-    dto.getIdRol()
-};
+    // Solo 6 parámetros según el procedimiento almacenado
+    String sql = "CALL sp_crear_usuario(?, ?, ?, ?, ?, ?,?)";
+    Object[] params = new Object[]{
+        dto.getNombres(),    // p_nombres
+        dto.getApellidos(),  // p_apellidos
+        dto.getPassword(),   // p_password
+        dto.getEmail(),      // p_email
+        dto.getDni(),        // p_dni
+        dto.getIdRol(),      // p_idRol
+        dto.getFirmaBase64() // p_firmaBase64
+    };
 
-
-    return jdbcTemplate.query(sql, params, rs -> rs.next() ? rs.getInt("idUsuario") : 0);
+    // Usamos update si no devuelve id, o query si tu procedimiento devuelve algo
+    return jdbcTemplate.update(sql, params);
 }
-
 
 	public List<ListarUsuarioDTO> listarUsuarios(Integer id) {
 		return jdbcTemplate.query(
@@ -58,8 +86,8 @@ Object[] params = new Object[]{
 					u.setId(rs.getInt("id"));
 					u.setNombres(rs.getString("nombres"));
 					u.setApellidos(rs.getString("apellidos"));
-					u.setUsername(rs.getString("username"));
 					u.setEmail(rs.getString("email"));
+                    u.setDni(rs.getString("dni"));
 					u.setSuscripcion(rs.getInt("suscripcion"));
 					u.setTema(rs.getString("tema"));
 					u.setJtable(rs.getString("jtable"));
@@ -81,10 +109,11 @@ Object[] params = new Object[]{
 					u.setId(rs.getInt("id"));
 					u.setNombres(rs.getString("nombres"));
 					u.setApellidos(rs.getString("apellidos"));
-					u.setUsername(rs.getString("username"));
 					u.setEmail(rs.getString("email"));
 					u.setSuscripcion(rs.getInt("suscripcion"));
 					u.setTema(rs.getString("tema"));
+                    u.setDni(rs.getString("dni"));
+
 					u.setJtable(rs.getString("jtable"));
 					u.setImagen(rs.getString("imagen"));
 					u.setIdRol(rs.getInt("idRol"));
@@ -194,11 +223,8 @@ public void actualizarPasswordPorEmail(String email, String password) {
 		String sql = "UPDATE users SET expirationToken = ? WHERE id = ?";
 		jdbcTemplate.update(sql, expirationToken, userId);
 	}
-@Transactional
-public void updateSecret2FA(String username, String secret) {
-    String sql = "UPDATE users SET secret_2fa = ? WHERE username = ?";
-    jdbcTemplate.update(sql, secret, username);
-}
+
+
 
 @Transactional
 public void updateTwoFactorEnabled(String username, boolean enabled) {

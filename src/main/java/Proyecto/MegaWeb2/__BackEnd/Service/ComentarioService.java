@@ -1,6 +1,6 @@
 package Proyecto.MegaWeb2.__BackEnd.Service;
 
-import Proyecto.MegaWeb2.__BackEnd.Dto.AñadirComentarioDTO;
+import Proyecto.MegaWeb2.__BackEnd.Dto.AnadirComentarioDTO;
 import Proyecto.MegaWeb2.__BackEnd.Dto.ComentarioResponseDTO;
 import Proyecto.MegaWeb2.__BackEnd.Repository.ComentarioRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,9 +19,10 @@ public class ComentarioService {
 		return comentarioRepository.listarComentarios();
 	}
 
-	// Añadir comentario
-	public int registrarComentario(AñadirComentarioDTO dto, int idUsuario) {
+	// Anadir comentario
+	public int registrarComentario(AnadirComentarioDTO dto, int idUsuario) {
 		return comentarioRepository.registrarComentario(dto, idUsuario);
 	}
 
 }
+

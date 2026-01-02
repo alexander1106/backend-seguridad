@@ -29,59 +29,67 @@ public class SecurityConfig {
         return new BCryptPasswordEncoder();
     }
 
- @Bean
-public CorsConfigurationSource corsConfigurationSource() {
-    CorsConfiguration cfg = new CorsConfiguration();
-    cfg.setAllowedOrigins(List.of(
-            "http://localhost:4200",
-            "http://localhost:8080",
-            "https://megayuntas.amazoncode.dev"
-    ));
-    cfg.setAllowedMethods(List.of("GET","POST","PUT","DELETE","OPTIONS"));
-    cfg.setAllowedHeaders(List.of("*"));
-    cfg.setAllowCredentials(true);
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration cfg = new CorsConfiguration();
+        cfg.setAllowedOrigins(List.of(
+                "http://localhost:4200",
+                "http://localhost:8080",
+                "https://megayuntas.amazoncode.dev"
+        ));
+        cfg.setAllowedMethods(List.of("GET","POST","PUT","DELETE","OPTIONS"));
+        cfg.setAllowedHeaders(List.of("*"));
+        cfg.setAllowCredentials(true);
 
-    UrlBasedCorsConfigurationSource src = new UrlBasedCorsConfigurationSource();
-    src.registerCorsConfiguration("/**", cfg);
-    return src;
-}
+        UrlBasedCorsConfigurationSource src = new UrlBasedCorsConfigurationSource();
+        src.registerCorsConfiguration("/**", cfg);
+        return src;
+    }
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+
         http
-                .cors().and()
-                .csrf(csrf -> csrf.disable())
-                .authorizeHttpRequests(authz -> authz
-                        .requestMatchers(HttpMethod.OPTIONS, "/api/auth/**").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/auth/forgot-password").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/auth/restablecer-password").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/auth/usuarios").permitAll()
-                        .requestMatchers(HttpMethod.GET,  "/api/usuarios").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/auth/generate-qr/**").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/auth/verify-2fa/**").permitAll()
+            .cors(cors -> {})
+            .csrf(csrf -> csrf.disable())
 
+            .sessionManagement(sm ->
+                sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+            )
 
-                        // Otros recursos públicos
-                        .requestMatchers("/api/auth/login").permitAll()
-                        
-                        .requestMatchers("/estilos.css", "/javascript.js", "/img/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/test/enviar").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/publicaciones").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/nosotros").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/productos/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/busquedas/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/consultas/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/clientes/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/comentarios").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/productos/{id}").permitAll()
+            .authorizeHttpRequests(auth -> auth
 
-                        .anyRequest().authenticated()
-                )
-                .addFilterBefore(new JwtAuthenticationFilter(jwtUtil), UsernamePasswordAuthenticationFilter.class)
-                .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
+                // 🔓 AUTH (SIN JWT)
+                .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/auth/verify-2fa").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/auth/forgot-password").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/auth/restablecer-password").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/auth/usuarios").permitAll()
+                .requestMatchers(HttpMethod.GET,  "/api/auth/generate-qr/**").permitAll()
+
+                // 🔓 ENDPOINTS PÚBLICOS
+                .requestMatchers("/estilos.css", "/javascript.js", "/img/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/test/enviar").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/publicaciones").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/nosotros").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/productos/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/busquedas/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/consultas/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/clientes/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/comentarios").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/productos/{id}").permitAll()
+
+                // 🔐 TODO LO DEMÁS REQUIERE JWT
+                .anyRequest().authenticated()
+            )
+
+            // 🔐 FILTRO JWT
+            .addFilterBefore(
+                new JwtAuthenticationFilter(jwtUtil),
+                UsernamePasswordAuthenticationFilter.class
+            );
 
         return http.build();
     }
-
 }
